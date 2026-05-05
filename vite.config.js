@@ -4,6 +4,6 @@ import tailwindcss from '@tailwindcss/vite'
 
 // https://vite.dev/config/
 export default defineConfig({
-  base: '/opencv-barcode-reader-demo/',
+  base: '/opencv-barcode-reader-demo/about/',
   plugins: [vue(), tailwindcss()],
 })
