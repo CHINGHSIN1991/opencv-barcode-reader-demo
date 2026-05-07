@@ -77,6 +77,24 @@
           <div class="rounded-lg overflow-hidden border border-gray-200 bg-gray-900">
             <img :src="originalImageSrc" class="w-full block" alt="原圖" />
           </div>
+          <!-- 環境資訊 badges -->
+          <div v-if="envInfo" class="flex flex-wrap gap-1.5">
+            <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium" :class="brightnessBadgeClass">
+              <span>亮度</span>
+              <span class="font-bold">{{ envInfo.brightness.toFixed(0) }}</span>
+              <span class="opacity-70">{{ envInfo.brightnessLabel }}</span>
+            </span>
+            <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium" :class="contrastBadgeClass">
+              <span>對比</span>
+              <span class="font-bold">{{ envInfo.contrast.toFixed(1) }}</span>
+              <span class="opacity-70">{{ envInfo.contrastLabel }}</span>
+            </span>
+            <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium" :class="sharpnessBadgeClass">
+              <span>清晰度</span>
+              <span class="font-bold">{{ envInfo.sharpness.toFixed(0) }}</span>
+              <span class="opacity-70">{{ envInfo.sharpnessLabel }}</span>
+            </span>
+          </div>
         </div>
 
         <!-- 執行按鈕 -->
@@ -116,15 +134,16 @@
           style="grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));"
         >
           <div
-            v-for="strategy in strategies"
-            :key="strategy.id"
+            v-for="item in flattenedItems"
+            :key="item.key"
             class="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden flex flex-col"
           >
             <StrategyCard
-              :strategy="strategy"
-              :result="results[strategy.id]"
-              :status="statuses[strategy.id]"
+              :strategy="item.virtualStrategy"
+              :result="item.result"
+              :status="item.status"
               :originalImageData="originalImageData"
+              :envInfo="envInfo"
             />
           </div>
         </div>
@@ -134,7 +153,7 @@
 </template>
 
 <script setup>
-import { ref, reactive, onMounted } from 'vue'
+import { ref, reactive, computed, onMounted } from 'vue'
 import StrategyCard from './components/StrategyCard.vue'
 import { STRATEGIES } from './scannerStrategies.js'
 
@@ -160,6 +179,78 @@ onMounted(() => {
 const originalImageSrc = ref(null)
 const originalSize = ref('')
 const originalImageData = ref(null)
+const envInfo = ref(null)
+
+// ── 環境資訊計算 ────────────────────────────────────────────────────────────
+function computeEnvInfo(imageData) {
+  const { data, width, height } = imageData
+  const n = width * height
+
+  // Mean Brightness (grayscale)
+  let sumGray = 0
+  for (let i = 0; i < data.length; i += 4) {
+    sumGray += 0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2]
+  }
+  const brightness = sumGray / n
+
+  // RMS Contrast
+  let sumSq = 0
+  for (let i = 0; i < data.length; i += 4) {
+    const gray = 0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2]
+    sumSq += (gray - brightness) ** 2
+  }
+  const contrast = Math.sqrt(sumSq / n)
+
+  // Laplacian Variance (sharpness) via OpenCV
+  let sharpness = 0
+  try {
+    const cv = window.cv
+    if (cv && cv.Mat) {
+      const src = cv.matFromImageData(imageData)
+      const gray = new cv.Mat()
+      const lap = new cv.Mat()
+      const meanMat = new cv.Mat()
+      const stdMat = new cv.Mat()
+      try {
+        cv.cvtColor(src, gray, cv.COLOR_RGBA2GRAY)
+        cv.Laplacian(gray, lap, cv.CV_64F)
+        cv.meanStdDev(lap, meanMat, stdMat)
+        const std = stdMat.data64F[0]
+        sharpness = std * std
+      } finally {
+        src.delete(); gray.delete(); lap.delete(); meanMat.delete(); stdMat.delete()
+      }
+    }
+  } catch (_) { /* graceful degradation */ }
+
+  const brightnessLabel = brightness < 60 ? '偏暗' : brightness > 180 ? '偏亮' : '正常'
+  const contrastLabel = contrast < 20 ? '低對比' : contrast > 60 ? '高對比' : '正常'
+  const sharpnessLabel = sharpness < 100 ? '模糊' : sharpness > 500 ? '清晰' : '普通'
+
+  return { brightness, contrast, sharpness, brightnessLabel, contrastLabel, sharpnessLabel }
+}
+
+const brightnessBadgeClass = computed(() => {
+  if (!envInfo.value) return ''
+  const b = envInfo.value.brightness
+  if (b < 60) return 'bg-blue-100 text-blue-700'
+  if (b > 180) return 'bg-orange-100 text-orange-700'
+  return 'bg-green-100 text-green-700'
+})
+const contrastBadgeClass = computed(() => {
+  if (!envInfo.value) return ''
+  const c = envInfo.value.contrast
+  if (c < 20) return 'bg-yellow-100 text-yellow-700'
+  if (c > 60) return 'bg-purple-100 text-purple-700'
+  return 'bg-green-100 text-green-700'
+})
+const sharpnessBadgeClass = computed(() => {
+  if (!envInfo.value) return ''
+  const s = envInfo.value.sharpness
+  if (s < 100) return 'bg-red-100 text-red-700'
+  if (s > 500) return 'bg-green-100 text-green-700'
+  return 'bg-yellow-100 text-yellow-700'
+})
 
 function onFileChange(e) {
   const file = e.target.files?.[0]
@@ -177,6 +268,7 @@ function onFileChange(e) {
       const ctx = canvas.getContext('2d')
       ctx.drawImage(img, 0, 0)
       originalImageData.value = ctx.getImageData(0, 0, img.naturalWidth, img.naturalHeight)
+      envInfo.value = computeEnvInfo(originalImageData.value)
       resetResults()
     }
     img.src = ev.target.result
@@ -199,6 +291,44 @@ function resetResults() {
   }
   totalElapsed.value = null
 }
+
+// ── 將 multiResult 策略展開為獨立虛擬卡片 ─────────────────────────────────
+const MULTI_RESULT_LABELS = ['上方帶 (y=20%)', '中央帶 (y=35%)', '下方帶 (y=50%)']
+
+const flattenedItems = computed(() => {
+  const items = []
+  for (const strategy of strategies) {
+    if (strategy.multiResult) {
+      const res = results[strategy.id]
+      const st = statuses[strategy.id]
+      const subResults = st === 'done' && Array.isArray(res?.data) ? res.data : null
+      for (let i = 0; i < 3; i++) {
+        const label = subResults?.[i]?.label ?? MULTI_RESULT_LABELS[i]
+        items.push({
+          key: `${strategy.id}_${i}`,
+          virtualStrategy: {
+            id: `${strategy.id}_${i}`,
+            displayName: label,
+            environment: strategy.environment,
+            description: strategy.description,
+          },
+          result: subResults
+            ? { data: { imageData: subResults[i].imageData, steps: subResults[i].steps }, elapsed: i === 0 ? res.elapsed : null }
+            : null,
+          status: st,
+        })
+      }
+    } else {
+      items.push({
+        key: strategy.id,
+        virtualStrategy: strategy,
+        result: results[strategy.id],
+        status: statuses[strategy.id],
+      })
+    }
+  }
+  return items
+})
 
 function yieldToUI() {
   return new Promise((resolve) => setTimeout(resolve, 0))

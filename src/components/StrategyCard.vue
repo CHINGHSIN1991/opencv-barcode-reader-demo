@@ -1,56 +1,5 @@
 <template>
-  <!-- 多結果（strategyDetectAndCropBarcode）：展開為子卡片列表 -->
-  <div v-if="strategy.multiResult && Array.isArray(result?.data)">
-    <div class="px-3 pt-3 pb-2 border-b border-gray-100">
-      <h3 class="font-semibold text-gray-800 text-sm leading-tight">{{ strategy.displayName }}</h3>
-      <span class="text-xs text-indigo-600 font-medium">{{ strategy.environment }}</span>
-    </div>
-    <div class="space-y-3 px-3 py-3">
-      <div
-        v-for="(sub, i) in result.data"
-        :key="i"
-        class="rounded-lg border border-gray-100 bg-gray-50 overflow-hidden"
-      >
-        <div class="flex items-center justify-between px-2 py-1 bg-gray-100">
-          <span class="text-xs font-medium text-gray-600">{{ sub.label }}</span>
-          <span v-if="i === 0 && result.elapsed != null" class="text-xs text-gray-400">
-            {{ result.elapsed }}ms
-          </span>
-        </div>
-        <!-- 左原圖 右處理後 -->
-        <div class="grid grid-cols-2 gap-0.5 bg-gray-200">
-          <div class="bg-gray-900">
-            <canvas
-              ref="origSubCanvasRefs"
-              class="w-full block"
-              style="image-rendering: pixelated;"
-            />
-          </div>
-          <div class="bg-gray-900">
-            <canvas
-              :ref="el => setSubCanvas(el, i)"
-              class="w-full block"
-              style="image-rendering: pixelated;"
-            />
-          </div>
-        </div>
-        <div class="flex text-[10px] text-gray-400">
-          <span class="flex-1 text-center py-0.5 border-r border-gray-100">原圖</span>
-          <span class="flex-1 text-center py-0.5">處理後</span>
-        </div>
-        <div class="px-2 py-1">
-          <StepsList :steps="sub.steps" />
-        </div>
-      </div>
-    </div>
-    <!-- 技術說明 -->
-    <div class="px-3 pb-3">
-      <p class="text-xs text-gray-500 leading-relaxed">{{ strategy.description }}</p>
-    </div>
-  </div>
-
-  <!-- 單一結果（其他策略）或錯誤狀態 -->
-  <div v-else class="flex flex-col h-full">
+  <div class="flex flex-col h-full">
     <!-- 卡片頭 -->
     <div class="px-3 pt-3 pb-2 border-b border-gray-100">
       <div class="flex items-start justify-between gap-2">
@@ -63,22 +12,20 @@
       <span class="text-xs text-indigo-600 font-medium">{{ strategy.environment }}</span>
     </div>
 
-    <!-- 比對區（左原圖 右處理後） -->
+    <!-- 處理後圖片（可雙擊比對） -->
     <div
       v-if="status === 'done'"
-      class="grid grid-cols-2 gap-0.5 bg-gray-200"
+      class="relative group cursor-zoom-in"
+      @dblclick="showDialog = true"
     >
-      <div class="bg-gray-900">
-        <canvas ref="origCanvas" class="w-full block" style="image-rendering: pixelated;" />
+      <canvas ref="singleCanvas" class="w-full block" style="image-rendering: pixelated;" />
+      <!-- 雙擊提示 overlay -->
+      <div class="absolute bottom-1.5 right-1.5 flex items-center gap-1 bg-black/50 text-white text-[10px] px-1.5 py-0.5 rounded opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none select-none">
+        <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-4.35-4.35M17 11A6 6 0 115 11a6 6 0 0112 0z" />
+        </svg>
+        雙擊預覽
       </div>
-      <div class="bg-gray-900">
-        <canvas ref="singleCanvas" class="w-full block" style="image-rendering: pixelated;" />
-      </div>
-    </div>
-    <!-- 標籤 -->
-    <div v-if="status === 'done'" class="flex text-[10px] text-gray-400 border-b border-gray-100">
-      <span class="flex-1 text-center py-0.5 border-r border-gray-100">原圖</span>
-      <span class="flex-1 text-center py-0.5">處理後</span>
     </div>
 
     <!-- 其他狀態 -->
@@ -102,27 +49,37 @@
       <p class="text-xs text-gray-500 leading-relaxed">{{ strategy.description }}</p>
     </div>
   </div>
+
+  <!-- 比對 Dialog -->
+  <CompareDialog
+    :visible="showDialog"
+    :title="strategy.displayName"
+    :environment="strategy.environment"
+    :originalImageData="originalImageData"
+    :processedImageData="processedImageData"
+    :steps="result?.data?.steps ?? []"
+    :envInfo="envInfo"
+    @close="showDialog = false"
+  />
 </template>
 
 <script setup>
-import { ref, watch, nextTick } from 'vue'
+import { ref, watch, nextTick, computed } from 'vue'
 import StepsList from './StepsList.vue'
+import CompareDialog from './CompareDialog.vue'
 
 const props = defineProps({
   strategy: { type: Object, required: true },
   result: { type: Object, default: null },
   status: { type: String, default: 'idle' }, // idle | processing | done | skipped | error
-  originalImageData: { type: Object, default: null }, // ImageData of original image
+  originalImageData: { type: Object, default: null },
+  envInfo: { type: Object, default: null },
 })
 
 const singleCanvas = ref(null)
-const origCanvas = ref(null)
-const subCanvasRefs = ref([])
-const origSubCanvasRefs = ref([])
+const showDialog = ref(false)
 
-function setSubCanvas(el, i) {
-  subCanvasRefs.value[i] = el
-}
+const processedImageData = computed(() => props.result?.data?.imageData ?? null)
 
 function drawImageData(canvas, imageData) {
   if (!canvas || !imageData) return
@@ -133,23 +90,11 @@ function drawImageData(canvas, imageData) {
 }
 
 watch(
-  () => [props.result, props.status, props.originalImageData],
+  () => [props.result, props.status],
   async () => {
     await nextTick()
     if (props.status !== 'done' || !props.result) return
-
-    if (props.strategy.multiResult && Array.isArray(props.result.data)) {
-      props.result.data.forEach((sub, i) => {
-        drawImageData(subCanvasRefs.value[i], sub.imageData)
-        // 多結果卡：每個子卡都畫原圖
-        if (origSubCanvasRefs.value[i]) {
-          drawImageData(origSubCanvasRefs.value[i], props.originalImageData)
-        }
-      })
-    } else if (props.result.data?.imageData) {
-      drawImageData(singleCanvas.value, props.result.data.imageData)
-      drawImageData(origCanvas.value, props.originalImageData)
-    }
+    drawImageData(singleCanvas.value, props.result.data?.imageData)
   },
   { deep: true }
 )
