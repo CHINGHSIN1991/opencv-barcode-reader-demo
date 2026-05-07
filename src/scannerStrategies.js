@@ -494,6 +494,7 @@ export const STRATEGIES = [
     id: 'claheOnly',
     displayName: 'CLAHE 對比增強',
     environment: '光線不均勻（部分日照＋陰影混合）',
+    envCategory: 'normal',
     description:
       '局部自適應直方圖均衡化（Contrast Limited AHE），將影像切成 8×8 格各自均衡，clipLimit=2.0 限制過度放大雜訊。運算量小，適合快速嘗試。',
     run: runClaheOnly,
@@ -502,6 +503,7 @@ export const STRATEGIES = [
     id: 'sharpenOnly',
     displayName: 'Unsharp Mask 銳化',
     environment: '相機輕微失焦 / 手持晃動模糊',
+    envCategory: 'normal',
     description:
       'sharpened = gray × 1.5 − blurred × 0.5。原圖減去高斯模糊版本等於高頻細節，加回原圖即銳化邊緣。不改變整體亮度。',
     run: runSharpenOnly,
@@ -510,6 +512,7 @@ export const STRATEGIES = [
     id: 'centerCropClahe',
     displayName: '中央裁切 + 放大 + CLAHE',
     environment: '條碼尺寸較小 / 邊緣雜訊多',
+    envCategory: 'normal',
     description:
       '裁切中央 60%×60% 去除邊緣干擾，INTER_CUBIC 雙三次插值放大 2x 提升線條像素數，再以 clipLimit=3.0 強化局部對比。',
     run: runCenterCropClahe,
@@ -518,6 +521,7 @@ export const STRATEGIES = [
     id: 'adaptiveThreshold',
     displayName: '自適應閾值二值化',
     environment: '光影複雜（日光燈橫向光帶、低對比）',
+    envCategory: 'both',
     description:
       'CLAHE 後套用 adaptiveThreshold，以 31×31 高斯加權計算局部閾值，C=5 避免均勻區產生雜訊。產出純黑白影像，完全消除灰階模糊。',
     run: runAdaptiveThreshold,
@@ -526,6 +530,7 @@ export const STRATEGIES = [
     id: 'darkBoost',
     displayName: '暗光線性增強',
     environment: '均勻低光源環境',
+    envCategory: 'dark',
     description:
       'convertScaleAbs(α=2.2, β=50) 線性拉伸：每像素 = |原值 × 2.2 + 50|。後接高強度 CLAHE(5.0)。簡單粗暴但對均勻暗光效果佳；亮區可能過曝。',
     run: runDarkBoost,
@@ -534,6 +539,7 @@ export const STRATEGIES = [
     id: 'gammaCorrection',
     displayName: 'Gamma 校正（非線性暗光）',
     environment: '明暗混合低光源 / 逆光場景',
+    envCategory: 'dark',
     description:
       'LUT Gamma 曲線(γ=0.5)：output = 255×(input/255)^0.5，暗部大幅提亮（50→113），亮部微幅壓縮（200→226），不過曝。再接 CLAHE(3.0)。',
     run: runGammaCorrection,
@@ -542,6 +548,7 @@ export const STRATEGIES = [
     id: 'horizontalBandClahe',
     displayName: '水平帶裁切 + 放大 + CLAHE',
     environment: '最常見手持水平掃描姿勢',
+    envCategory: 'normal',
     description:
       '保留中央 35% 高度水平帶（全寬），INTER_CUBIC 放大 2x，再 CLAHE(3.0)。與 centerCropClahe 差異：保留全寬，專攻垂直方向線條清晰度。',
     run: runHorizontalBandClahe,
@@ -550,6 +557,7 @@ export const STRATEGIES = [
     id: 'detectAndCropBarcode',
     displayName: '多區域水平帶掃描',
     environment: '條碼垂直位置不確定（偏上/置中/偏下）',
+    envCategory: 'both',
     description:
       '對三個重疊帶（y=20%、35%、50%，各佔高度 30%）分別裁切放大 2x + CLAHE(3.0)，回傳 3 張結果。確保條碼不論在哪個位置都被涵蓋。',
     run: runDetectAndCropBarcode,
@@ -559,6 +567,7 @@ export const STRATEGIES = [
     id: 'gradientLocalize',
     displayName: '梯度自動定位條碼',
     environment: '複雜背景（條碼混雜在標籤或貨架中）',
+    envCategory: 'both',
     description:
       'Sobel(gradX − gradY) 利用條碼垂直線條特徵定位，GaussianBlur + threshold + morphologyEx CLOSE 填補間隙，findContours 取最大輪廓，自動裁切後放大 + CLAHE。',
     run: runGradientLocalize,
@@ -567,6 +576,7 @@ export const STRATEGIES = [
     id: 'deskewBarcode',
     displayName: '歪斜校正（仿射旋轉）',
     environment: '手持掃描條碼側倒（傾斜 3°~45°）',
+    envCategory: 'normal',
     description:
       '梯度定位後用 minAreaRect 推算歪斜角度，getRotationMatrix2D + warpAffine 以條碼中心為原點旋轉校正。不做全域透視變換，僅處理條碼區域，計算量小。角度 <3° 或 >45° 自動跳過。',
     run: runDeskewBarcode,
